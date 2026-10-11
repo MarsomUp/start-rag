@@ -257,8 +257,13 @@ data/                app.db + books/<sha12>_原名.txt   ← gitignore
 .rag_cache/         向量缓存（books/ 单书向量 + indexes/ 组合索引）   ← gitignore
 main.py              CLI 版入口（回归测试用，不要删）
 start.bat/start.sh   启动脚本：先杀 uvicorn 父子进程再启动
+tools/dbview.py      查看 data/app.db 的只读工具（总览/schema/show/sql/files）
 examples/            学习用示例（如 bm25_demo.py）
 ```
+
+**想看数据库里有什么状态**，用 `python tools/dbview.py`（总览）、
+`python tools/dbview.py show chat_logs`（看提问记录，调试回答质量时很有用）。
+它**默认只读**打开，不会干扰正在运行的服务 —— 服务开着也能安全查看。
 
 ---
 
