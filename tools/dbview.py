@@ -6,6 +6,8 @@
     python tools/dbview.py show <表名> [行数]    看某张表的数据（默认 20 行）
     python tools/dbview.py sql "SELECT ..."     执行任意 SQL
     python tools/dbview.py files                数据库相关文件（含 WAL）
+    python tools/dbview.py checkpoint           把 WAL 合并回主文件
+                                                （好让 VS Code 插件等图形化工具能读到数据）
 
 默认**只读打开**，防止你手滑改坏应用的数据。要写就加 --write：
     python tools/dbview.py --write sql "DELETE FROM chat_logs"
@@ -80,10 +82,10 @@ def cmd_overview(con: sqlite3.Connection):
     print(f"数据库：{DB}")
     print(f"大小  ：app.db {DB.stat().st_size:,} 字节", end="")
     wal = Path(str(DB) + "-wal")
-    if wal.exists():
-        print(f"  +  app.db-wal {wal.stat().st_size:,} 字节  ← 新数据在这里")
+    if wal.exists() and wal.stat().st_size > 0:
+        print(f"  +  app.db-wal {wal.stat().st_size:,} 字节  ← 新数据还没合并进来")
     else:
-        print()
+        print("  （WAL 已合并，这一个文件就是完整数据）")
     print(f"共 {len(tables)} 张表")
     print()
 
@@ -150,6 +152,31 @@ def cmd_files():
     print("      只拷 app.db 会丢掉 WAL 里还没合并的数据。")
 
 
+def cmd_checkpoint(con: sqlite3.Connection):
+    """把 WAL 里的改动合并回主文件，并清空 WAL。
+
+    为什么需要：本项目开了 WAL 模式，新数据先写进 app.db-wal，
+    之后才合并回 app.db。所以 app.db 本身可能几乎是空的
+    （实测：4096 字节、0 张表，而数据全在 500KB 的 -wal 里）。
+
+    后果：任何"只读取 app.db 字节"的图形化工具（VS Code 插件、
+    某些在线查看器）都会显示成**空库**。
+
+    跑一次这个命令，主文件就包含了全部数据，之后任何工具都能正常读。
+    这是 SQLite 的标准操作，服务开着也能安全执行。
+    """
+    before = Path(str(DB) + "-wal")
+    b = before.stat().st_size if before.exists() else 0
+    print(f"合并前：app.db {DB.stat().st_size:,} 字节，app.db-wal {b:,} 字节")
+    row = con.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+    # 返回 (busy, log_pages, checkpointed_pages)
+    print(f"checkpoint 结果：busy={row[0]}  WAL 页数={row[1]}  已合并={row[2]}")
+    a = before.stat().st_size if before.exists() else 0
+    print(f"合并后：app.db {DB.stat().st_size:,} 字节，app.db-wal {a:,} 字节")
+    print()
+    print("  现在可以放心用任何图形化工具打开 data/app.db 了。")
+
+
 def main():
     ap = argparse.ArgumentParser(
         description="查看 data/app.db 的内容（默认只读）",
@@ -170,9 +197,12 @@ def main():
     p.add_argument("statement")
 
     sub.add_parser("files", help="看数据库相关文件")
+    sub.add_parser("checkpoint", help="把 WAL 合并回主文件（好让图形化工具能读）")
 
     args = ap.parse_args()
-    con = connect(args.write)
+    # checkpoint 本质是写操作，自动开启写模式
+    write = args.write or args.cmd == "checkpoint"
+    con = connect(write)
     try:
         if args.cmd == "schema":
             cmd_schema(con, args.table)
@@ -182,6 +212,8 @@ def main():
             cmd_sql(con, args.statement)
         elif args.cmd == "files":
             cmd_files()
+        elif args.cmd == "checkpoint":
+            cmd_checkpoint(con)
         else:
             cmd_overview(con)
     finally:
