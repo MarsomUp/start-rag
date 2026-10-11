@@ -1,0 +1,21 @@
+{#-
+  队列状态徽标：Worker 是否活着 / 有没有任务在跑 / 排了几个。
+
+  它**自己不带轮询**。内容随「书籍列表」片段一起更新（htmx 带外交换 hx-swap-oob），
+  这样整个管理端只有一条轮询循环。
+
+  历史教训：这里原来写的是 hx-trigger="every 3s"，而列表是 1s/15s 自适应的，
+  结果列表空闲下来了、徽标还在每 3 秒敲一次，日志里全是 /admin/partials/queue。
+
+  用法：
+    - 首次渲染（admin.html）：直接 include，不带 oob
+    - 片段响应（_book_list_response.html）：先 {% set oob = true %} 再 include
+-#}
+<span id="queue-badge"
+      class="queue-badge"
+      {% if oob %}hx-swap-oob="true"{% endif %}>
+  <span class="dot {{ 'ok' if worker_alive else 'err' }}"></span>
+  {% if worker_alive %}后台运行中{% else %}后台已停止{% endif %}
+  {% if running_job %}· 正在处理 #{{ running_job.id }}{% endif %}
+  {% if queued_count %}· 排队 {{ queued_count }}{% endif %}
+</span>

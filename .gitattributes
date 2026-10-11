@@ -1,0 +1,40 @@
+# 行尾符规则。
+#
+# 为什么必须显式声明：Git for Windows 默认 core.autocrlf=true，会在检出时把
+# LF 转成 CRLF。而本项目的两个启动脚本对行尾有**硬性要求**，转错就直接坏：
+#
+#   start.bat  必须 CRLF —— cmd.exe 遇到 LF 行尾的批处理会解析错乱，
+#                          报一堆 "xxx is not recognized"，现象极具误导性
+#   start.sh   必须 LF   —— CRLF 会让 \r 被当成命令的一部分，Linux 上直接报错
+#
+# 详见 AGENTS.md 第 4.1 节。
+
+# 默认让 Git 自己判断（不做无谓转换）
+* text=auto
+
+# ---------- 行尾是硬性要求的文件，锁死 ----------
+start.bat   text eol=crlf
+start.sh    text eol=lf
+
+# ---------- 其余文本统一用 LF ----------
+*.py        text eol=lf
+*.md        text eol=lf
+*.txt       text eol=lf
+*.html      text eol=lf
+*.css       text eol=lf
+*.js        text eol=lf
+*.json      text eol=lf
+*.toml      text eol=lf
+*.cfg       text eol=lf
+*.example   text eol=lf
+.gitignore  text eol=lf
+
+# ---------- 二进制，不要碰 ----------
+*.npy       binary
+*.faiss     binary
+*.pkl       binary
+*.db        binary
+*.db-wal    binary
+*.db-shm    binary
+*.png       binary
+*.ico       binary

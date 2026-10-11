@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% set active = 'chat' %}
+{% block title %}问答 · 知识库问答{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="card-head">
+    <h1>知识库问答</h1>
+    <span class="muted small">可检索 {{ books|length }} 本已就绪的书</span>
+  </div>
+
+  {% if not api_key_ok %}
+    <div class="alert err-text">
+      没有检测到 DEEPSEEK_API_KEY —— 提问会失败。
+      可以设置环境变量，或把 <code>.env.example</code> 复制成 <code>.env</code> 后填写。
+    </div>
+  {% endif %}
+
+  {% if not books %}
+    <div class="alert">
+      还没有已就绪的书籍。先到 <a href="/admin">管理端</a> 上传一本，
+      等向量化跑完再回来提问。
+    </div>
+  {% else %}
+    <details class="scope">
+      <summary>检索范围（默认全部）</summary>
+      <div class="scope-list">
+        {% for b in books %}
+          <label>
+            {#- form="ask-form" 让这些复选框即使不在 <form> 里也能随表单一起提交 -#}
+            <input type="checkbox" name="book_ids" value="{{ b.id }}" form="ask-form" checked>
+            {{ b.title }} <span class="muted small">({{ b.n_chunks }} 块)</span>
+          </label>
+        {% endfor %}
+      </div>
+      <p class="muted small">全部取消勾选 = 搜索全部书籍。</p>
+    </details>
+  {% endif %}
+</div>
+
+<div class="card">
+  <p class="muted small">提问后，回答会连同引用的原文片段一起追加在下面。</p>
+
+  <div id="conversation" class="conversation"></div>
+
+  {#-
+    注意不要用 this.reset() —— 检索范围的复选框是用 form="ask-form"
+    关联进来的，reset() 会把它们全部取消勾选。这里只清空问题输入框。
+  -#}
+  <form id="ask-form" class="ask-form"
+        hx-post="/chat/partials/ask"
+        hx-target="#conversation"
+        hx-swap="beforeend"
+        hx-indicator="#thinking"
+        hx-on::after-request="if (event.detail.successful) { var q = this.querySelector('[name=question]'); q.value = ''; q.focus(); }"
+        hx-on::after-swap="window.scrollTo(0, document.body.scrollHeight)">
+    <input type="text" name="question" autocomplete="off" required
+           placeholder="例如：孙悟空是从哪里出生的？"
+           {% if not books %}disabled{% endif %}>
+    <button type="submit" {% if not books %}disabled{% endif %}>提问</button>
+  </form>
+
+  <div id="thinking" class="htmx-indicator thinking">正在检索并生成回答…</div>
+</div>
+{% endblock %}

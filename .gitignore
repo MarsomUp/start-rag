@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# 配置（含 API Key，不要提交）
+.env
+
+# 运行期数据
+data/
+.rag_cache/
+
+# 编辑器
+.vscode/
+.idea/

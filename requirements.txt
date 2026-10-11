@@ -1,0 +1,25 @@
+# Web 层（这几个版本必须匹配，建议锁死）
+fastapi==0.143.0
+uvicorn==0.54.0
+python-multipart==0.0.32      # FastAPI 处理文件上传必需
+Jinja2==3.1.6
+SQLAlchemy==2.1.3
+pydantic==2.13.5
+pydantic-settings==2.15.0
+
+# RAG / LangChain
+langchain==1.4.3
+langchain-core==1.6.7
+langchain-community==0.4.2
+langchain-text-splitters==1.1.3
+langchain-deepseek==1.1.1
+faiss-cpu==1.15.1
+
+# 向量模型（这几个跟平台/CPU 相关，用 >= 更稳）
+sentence-transformers==6.1.0
+transformers>=5.19.0
+torch>=2.14.1
+numpy>=2.4.6
+
+# 其他
+httpx>=0.28.1

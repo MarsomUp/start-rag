@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}知识库问答{% endblock %}</title>
+  <script src="/static/htmx.min.js" defer></script>
+  <style>
+    :root { --fg:#1f2937; --muted:#6b7280; --line:#e5e7eb; --brand:#2563eb;
+            --ok:#059669; --busy:#2563eb; --err:#dc2626; --bg:#f9fafb; }
+    * { box-sizing:border-box; }
+    body { margin:0; line-height:1.65; color:var(--fg); background:var(--bg);
+           font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif; }
+    header { display:flex; align-items:center; gap:28px; padding:12px 24px;
+             background:#fff; border-bottom:1px solid var(--line); }
+    header .brand { font-weight:600; }
+    header nav a { margin-right:16px; color:var(--muted); text-decoration:none; }
+    header nav a:hover, header nav a.active { color:var(--brand); }
+    main { max-width:920px; margin:32px auto; padding:0 24px; }
+    .card { background:#fff; border:1px solid var(--line); border-radius:10px;
+            padding:24px; margin-bottom:20px; }
+    .card-head { display:flex; align-items:center; justify-content:space-between;
+                 gap:16px; margin-bottom:12px; }
+    .card-head h2 { margin:0; }
+    h1 { font-size:22px; margin:0 0 8px; }
+    h2 { font-size:15px; margin:0 0 12px; }
+    .muted { color:var(--muted); font-size:14px; }
+    .small { font-size:12px; }
+    .strong { font-weight:600; }
+    .err-text { color:var(--err); }
+    code { background:#f3f4f6; padding:2px 6px; border-radius:4px; font-size:13px; }
+    a { color:var(--brand); }
+
+    /* ---------- 表格 ---------- */
+    table.books { width:100%; border-collapse:collapse; }
+    table.books th { text-align:left; font-size:13px; font-weight:600; color:var(--muted);
+                     padding:8px 10px; border-bottom:1px solid var(--line); }
+    table.books td { padding:12px 10px; border-bottom:1px solid var(--line);
+                     vertical-align:top; }
+    table.books tr:last-child td { border-bottom:0; }
+    .col-status { width:120px; }
+    .col-progress { width:190px; }
+    .col-actions { width:76px; text-align:right; }
+    td.empty { text-align:center; padding:32px 10px; }
+
+    /* ---------- 状态标签 ---------- */
+    .tag { display:inline-block; padding:2px 9px; border-radius:999px; font-size:12px;
+           background:#f3f4f6; color:var(--muted); white-space:nowrap; }
+    .tag.ok { background:#d1fae5; color:var(--ok); }
+    .tag.busy { background:#dbeafe; color:var(--busy); }
+    .tag.err { background:#fee2e2; color:var(--err); }
+
+    /* ---------- 进度条 ---------- */
+    .progress { height:8px; background:#eef2f7; border-radius:999px; overflow:hidden; }
+    .progress .bar { height:100%; background:var(--busy); border-radius:999px;
+                     transition:width .3s ease; }
+
+    /* ---------- 队列徽标 ---------- */
+    .queue-badge { display:inline-flex; align-items:center; gap:6px; font-size:13px;
+                   color:var(--muted); background:#f9fafb; border:1px solid var(--line);
+                   border-radius:999px; padding:3px 12px; }
+    .dot { width:8px; height:8px; border-radius:50%; background:var(--muted); }
+    .dot.ok { background:var(--ok); }
+    .dot.err { background:var(--err); }
+
+    /* ---------- 按钮与表单 ---------- */
+    button { background:var(--brand); color:#fff; border:0; border-radius:6px;
+             padding:8px 16px; font-size:14px; cursor:pointer; }
+    button:hover { opacity:.9; }
+    button.danger { background:transparent; color:var(--err); border:1px solid #fecaca;
+                    padding:5px 12px; font-size:13px; }
+    button.danger:hover { background:#fef2f2; }
+    .upload-form { display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+                   margin-top:16px; }
+    .upload-form input[type=file] { font-size:14px; }
+    .alert { margin-top:12px; padding:10px 14px; border-radius:8px;
+             background:#fef2f2; border:1px solid #fecaca; font-size:14px; }
+
+    /* ---------- htmx 请求指示器 ---------- */
+    .htmx-indicator { display:none; }
+    .htmx-request .htmx-indicator, .htmx-request.htmx-indicator { display:inline; }
+
+    /* ---------- 问答界面 ---------- */
+    .conversation { display:flex; flex-direction:column; gap:18px; margin:16px 0; }
+    .exchange .q { background:#eff6ff; border:1px solid #dbeafe; border-radius:10px;
+                   padding:10px 14px; font-weight:600; }
+    .exchange .a { background:#fff; border:1px solid var(--line); border-radius:10px;
+                   padding:14px; margin-top:8px; }
+    /* 模型输出里的换行要保留 */
+    .answer-text { white-space:pre-wrap; }
+    .exchange .meta { margin-top:10px; }
+    details.sources { margin-top:10px; }
+    details.sources summary { cursor:pointer; color:var(--brand); font-size:13px; }
+    details.sources ol { margin:10px 0 0; padding-left:22px; }
+    details.sources li { margin-bottom:10px; }
+    .src-book { font-size:12px; color:var(--muted); }
+    .src-text { font-size:13px; color:#374151; background:#f9fafb;
+                border:1px solid var(--line); border-radius:6px;
+                padding:8px 10px; margin-top:3px; }
+    .ask-form { display:flex; gap:10px; margin-top:8px; }
+    .ask-form input[type=text] { flex:1; padding:9px 12px; font-size:14px;
+                                 border:1px solid var(--line); border-radius:6px; }
+    .ask-form input[type=text]:focus { outline:2px solid #bfdbfe; border-color:var(--brand); }
+    .ask-form input[type=text]:disabled { background:#f3f4f6; }
+    .thinking { margin-top:10px; font-size:14px; color:var(--busy); }
+    details.scope { margin-top:14px; }
+    details.scope summary { cursor:pointer; color:var(--brand); font-size:14px; }
+    .scope-list { display:flex; flex-wrap:wrap; gap:14px; margin:10px 0 4px; font-size:14px; }
+    .scope-list label { display:flex; align-items:center; gap:5px; cursor:pointer; }
+  </style>
+</head>
+<body>
+  <header>
+    <span class="brand">知识库问答</span>
+    <nav>
+      <a href="/" class="{% if active == 'home' %}active{% endif %}">首页</a>
+      <a href="/chat" class="{% if active == 'chat' %}active{% endif %}">问答</a>
+      <a href="/admin" class="{% if active == 'admin' %}active{% endif %}">管理端</a>
+      <a href="/docs" target="_blank">API 文档</a>
+    </nav>
+  </header>
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

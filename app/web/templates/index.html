@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% set active = 'home' %}
+{% block title %}首页 · 知识库问答{% endblock %}
+
+{% block content %}
+<div class="card">
+  <h1>知识库问答系统</h1>
+  <p class="muted">
+    基于 RAG 的问答：管理端上传书籍 → 后台向量化 → 用户端提问，回答附带引用来源。
+  </p>
+</div>
+
+<div class="card">
+  <h2>当前配置</h2>
+  <p class="muted">
+    向量模型：<code>{{ settings.model_name }}</code><br>
+    切分参数：<code>{{ settings.chunk_size }}</code>，重叠 <code>{{ settings.chunk_overlap }}</code><br>
+    书籍目录：<code>{{ settings.books_dir }}</code>
+  </p>
+</div>
+
+<div class="card">
+  <h2>实现进度</h2>
+  <p class="muted">
+    阶段 0 ✅ 代码拆包 &nbsp;·&nbsp; 阶段 1 ✅ 数据层 + 上传接口<br>
+    阶段 2 ✅ 后台 Worker（单独异步加载）&nbsp;·&nbsp; 阶段 3 ✅ 管理端界面<br>
+    阶段 4 ✅ 用户问答界面 &nbsp;·&nbsp; 阶段 5 ⬜ 登录与权限
+  </p>
+  <p class="muted">
+    去 <a href="/chat">问答</a> 直接提问（回答会附上引用的原文片段），
+    或到 <a href="/admin">管理端</a> 上传书籍、看向量化进度。
+  </p>
+</div>
+{% endblock %}

@@ -1,0 +1,64 @@
+{#-
+  书籍列表片段。
+
+  它自己带着 hx-get / hx-trigger / hx-swap：
+  被换进页面之后会继续按 poll_seconds 的节奏自我刷新。
+  轮询节奏由服务端决定 —— 有任务在跑就 1 秒，空闲就 15 秒。
+-#}
+<tbody id="book-list"
+       hx-get="/admin/partials/books"
+       hx-trigger="every {{ poll_seconds }}s"
+       hx-swap="outerHTML">
+  {% for book in books %}
+    {% set job = jobs.get(book.id) %}
+    <tr>
+      <td>
+        <div class="strong">{{ book.title }}</div>
+        <div class="muted small">{{ book.filename }} · {{ (book.file_size / 1024) | round(1) }} KB</div>
+      </td>
+
+      <td>
+        {% if book.status == 'ready' %}
+          <span class="tag ok">就绪</span>
+        {% elif book.status == 'processing' %}
+          <span class="tag busy">向量化中</span>
+        {% elif book.status == 'failed' %}
+          <span class="tag err">失败</span>
+        {% else %}
+          <span class="tag">排队中</span>
+        {% endif %}
+        {% if book.error %}
+          <div class="small err-text">{{ book.error }}</div>
+        {% endif %}
+      </td>
+
+      <td class="col-progress">
+        {% if job and job.status == 'running' and job.total %}
+          <div class="progress">
+            <div class="bar" style="width: {{ (job.progress / job.total * 100) | round(1) }}%"></div>
+          </div>
+          <div class="muted small">{{ job.progress }} / {{ job.total }} 块</div>
+        {% elif book.n_chunks %}
+          <div>{{ book.n_chunks }} 块</div>
+          <div class="muted small">维度 {{ book.dim }}</div>
+        {% else %}
+          <span class="muted">—</span>
+        {% endif %}
+      </td>
+
+      <td class="col-actions">
+        <button class="danger"
+                hx-delete="/admin/partials/books/{{ book.id }}"
+                hx-target="#book-list"
+                hx-swap="outerHTML"
+                hx-confirm="确定删除《{{ book.title }}》？&#10;&#10;向量缓存会保留，重新上传同一本书仍然秒级就绪。">
+          删除
+        </button>
+      </td>
+    </tr>
+  {% else %}
+    <tr>
+      <td colspan="4" class="muted empty">还没有书籍。上传一个 .txt / .md 文件试试。</td>
+    </tr>
+  {% endfor %}
+</tbody>

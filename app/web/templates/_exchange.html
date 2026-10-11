@@ -1,0 +1,28 @@
+{#- 一条"一问一答"，由 htmx 追加到 #conversation -#}
+<div class="exchange">
+  <div class="q">{{ result.question }}</div>
+
+  <div class="a">
+    <div class="answer-text">{{ result.answer }}</div>
+
+    <div class="meta muted small">
+      用时 {{ "%.1f"|format(result.elapsed) }} 秒 ·
+      检索 {{ result.books|length }} 本
+      {%- if result.books %}（{{ result.books|map(attribute='title')|join('、') }}）{% endif %}
+    </div>
+
+    {% if result.sources %}
+      <details class="sources">
+        <summary>引用片段（{{ result.sources|length }} 条）</summary>
+        <ol>
+          {% for s in result.sources %}
+            <li>
+              <span class="src-book">{{ s.book }}</span>
+              <div class="src-text">{{ s.snippet }}</div>
+            </li>
+          {% endfor %}
+        </ol>
+      </details>
+    {% endif %}
+  </div>
+</div>

@@ -1,0 +1,10 @@
+{#-
+  出错时也返回一张"一问一答"卡片（HTTP 200）。
+  这样错误会出现在会话流里，和正常回答一样，用户不用去翻浏览器控制台。
+-#}
+<div class="exchange">
+  <div class="q">{{ question }}</div>
+  <div class="a">
+    <div class="alert err-text">{{ message }}</div>
+  </div>
+</div>

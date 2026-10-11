@@ -1,0 +1,11 @@
+{#-
+  书籍列表片段的**完整响应**：tbody + 带外交换的队列徽标。
+
+  为什么不把徽标直接塞进 _book_list.html：
+  那个模板既被 admin.html 首屏 include（此时徽标要正常渲染、不能带 oob），
+  又要作为片段响应返回（此时徽标要带 oob）。用一个单独的包装模板最清楚，
+  不用在模板里传来传去地加标志位。
+-#}
+{% include "_book_list.html" %}
+{% set oob = true %}
+{% include "_queue_badge.html" %}

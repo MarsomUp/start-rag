@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% set active = 'admin' %}
+{% block title %}管理端 · 知识库问答{% endblock %}
+
+{% block content %}
+<div class="card">
+  <h1>管理端</h1>
+  <p class="muted">
+    上传书籍 → 后台自动切分并向量化 → 就绪后即可被问答引用。
+    向量化很吃 CPU，所以任务**串行**执行：一次只跑一本，其余排队。
+  </p>
+
+  {#- 上传表单：htmx 直接提交 multipart，成功返回新的书籍列表替换 #book-list -#}
+  <form class="upload-form"
+        hx-post="/admin/partials/books"
+        hx-encoding="multipart/form-data"
+        hx-target="#book-list"
+        hx-swap="outerHTML"
+        hx-indicator="#uploading"
+        hx-on::after-request="if (event.detail.successful) this.reset()">
+    <input type="file" name="file" accept=".txt,.md" required>
+    <button type="submit">上传并入库</button>
+    <span id="uploading" class="htmx-indicator muted">上传中…</span>
+  </form>
+
+  {#- 校验失败时，后端用 HX-Retarget 把响应换到这里 -#}
+  <div id="upload-error"></div>
+</div>
+
+<div class="card">
+  <div class="card-head">
+    <h2>书籍列表</h2>
+    {% include "_queue_badge.html" %}
+  </div>
+
+  <table class="books">
+    <thead>
+      <tr>
+        <th>书名</th>
+        <th class="col-status">状态</th>
+        <th class="col-progress">进度 / 块数</th>
+        <th class="col-actions"></th>
+      </tr>
+    </thead>
+    {#- 首屏直接服务端渲染，避免闪一下"加载中"；之后由片段自己接管轮询 -#}
+    {% include "_book_list.html" %}
+  </table>
+</div>
+{% endblock %}
