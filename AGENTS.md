@@ -115,13 +115,32 @@ $t=[IO.File]::ReadAllText($p,$u) -replace "`r`n","`n" -replace "`n","`r`n"
 `constants.py:69` 和 `:160`），晚了就不生效。同理 `app/config.py` 里的 `.env`
 **不能**用来配这几个变量 —— 它加载得太晚。
 
-### 4.3 本机网络环境很特殊
+### 4.3 本机网络：装了代理软件，但它不一定在运行
 
-- 系统代理 `127.0.0.1:10090` **通常没启动**，而 `httpx` 会读系统代理 →
-  请求被拒（`WinError 10061`）。靠 `NO_PROXY=*` 绕开。
-- `huggingface.co` **直连不通**（TCP 能连上，但 TLS 证书吊销检查失败
-  `0x80092013`）。走镜像 `HF_ENDPOINT=https://hf-mirror.com`，实测可用。
-- `pypi.org` / `api.deepseek.com` 可直连。
+本机装了 **Clash Meta（`mihomo-windows-386`）**，在 `127.0.0.1:10090` 提供 HTTP 代理，
+并被设为 Windows 系统代理（`ProxyEnable=1`）。**关键：它不一定开着** —— 用户可能没启动它。
+
+实测的连接矩阵（2026-10）：
+
+| 站点 | 直连 | 走代理 |
+|---|---|---|
+| GitHub 网页 / `api.github.com` | ✅ | ✅ |
+| **`huggingface.co`** | ❌ 24 秒失败 | ✅ **0.4 秒** |
+| **`raw.githubusercontent.com`** | ❌ 超时 | ✅ **0.8 秒** |
+| `hf-mirror.com` | ✅ | ✅ |
+| `pypi.org` / `api.deepseek.com` | ✅ | ✅ |
+
+**所以 app 里那两行环境变量是刻意的，不要"顺手优化"掉：**
+
+- `NO_PROXY=*`（`app/__init__.py`）—— 代理没开时，`httpx` 会读到系统代理设置去撞
+  一个没人监听的端口，得到 `WinError 10061` 连接被拒。既然需要的站点都能直连，
+  索性让 Python 全部绕开代理。**这样代理开不开都不影响应用。**
+- `HF_ENDPOINT=https://hf-mirror.com` —— 因为 `huggingface.co` 直连不通，
+  用镜像替代。同样是为了**不依赖代理是否在运行**。
+
+> 如果哪天 `hf-mirror.com` 挂了：改用官方源 + 代理即可 ——
+> 删掉 `HF_ENDPOINT`，并把 `NO_PROXY` 去掉（让它走系统代理）。
+
 - 模型权重缓存在 **`D:\AI\HF-Home`**（`HF_HOME`），不要在 C 盘。
 
 ### 4.4 `torch` 依赖 MSVC 运行库
@@ -160,38 +179,47 @@ uvicorn 的 `StatReload` 实现是 `reload_dir.rglob("*.py")`。
 因为 `rag_cache` 有断点续算，重排不会白跑 —— 实测从 192/600 继续。
 **别删这个调用。**
 
-### 4.9 Git 远端必须用 HTTPS，不要改成 SSH
+### 4.9 Git 远端用 HTTPS，别改成 SSH
 
 远端：`https://github.com/MarsomUp/start-rag.git`（默认分支 `main`）
-
-本机对 GitHub 的干扰方式很特别。实测结论（2026-10，网络环境可能变化）：
+凭据已存进 Windows 凭据管理器（`LegacyGeneric:target=git:https://github.com`），
+**以后 push 不需要再登录**。
 
 | 入口 | 结果 |
 |---|---|
-| **HTTPS push** | ✅ 可用（GCM 凭据已存，不需要再登录） |
-| SSH `git@github.com:22` | ❌ 认证成功，但 push 必失败 |
+| **HTTPS push** | ✅ 稳定可用（已成功推送 3 次） |
+| SSH `git@github.com:22` | ❌ push 发出 3.6KB 后连接被关 |
 | SSH `ssh.github.com:443` | ❌ 同上 |
 
-SSH 的失败现象**极具迷惑性**，别误判成自己配置错了：
+SSH 的现象**极具迷惑性** —— 每一层看起来都是好的，只有最后一步失败：
+
+- TCP 通
+- `ssh -T git@github.com` 能打印 `Hi MarsomUp`（**认证是成功的**）
+- `git ls-remote`（读）也正常
+- 但 `git push`（写）必失败，而且 **`ssh` 自己的退出码还是 0**：
 
 ```
 Transferred: sent 3620, received 3932 bytes, in 0.8 seconds
-debug1: Exit status 0                                    ← ssh 自己退出码是 0
+debug1: Exit status 0
 send-pack: unexpected disconnect while reading sideband packet
 fatal: the remote end hung up unexpectedly
 ```
 
-拆开看就是：TCP 通 → SSH 握手通 → 认证通（会打印 `Hi MarsomUp`）→
-**`git ls-remote`（读）通** → 但 **`git-receive-pack`（写）刚发出 3.6KB 就被远端关闭**。
-换 `IPQoS=0`、`protocol.version=1`、端口 22/443 四种组合**全部无效**；
-把提交拆到只剩 192KB 也照样失败 —— 所以**不是体积问题，是写通道被干扰**。
+试过 `IPQoS=0`、`protocol.version=1`、端口 22/443 共 **4 种组合全部无效**；
+把提交从 2.1MB 拆到 **192KB 也照样失败** —— 所以**不是体积问题**。
 
-> 如果哪天 push 报 `Connection was reset`、`Empty reply from server` 或超时，
-> 那是**间歇性**的（同一分钟内 `https://github.com` 可能又通了）。
-> **重试即可**，不要急着换协议 —— 换 SSH 只会更糟。
+> 根因没有彻底定位，可能与 4.3 那个代理软件有关（它对非 HTTP 流量的处理）。
+> **结论就是别再花时间调 SSH** —— 换回 HTTPS 一次就过。
 
-另外本机 `https://github.com` 的**网页访问**经常超时，但 `api.github.com` 一直稳定。
-所以想核实远端状态时，**用 API 比用网页可靠**：
+**附注：`ssh -T` 在这个环境里可能永久挂起。** 它会申请一个交互式会话，而这里
+没有控制台（日志里是 `GetConsoleMode on STD_INPUT_HANDLE failed with 6`），
+于是它一直等 stdin，表现为"卡住"。理论上加 `-n`（stdin 接 /dev/null）能避免，
+但实测加了 `-n` 也出现过挂起 —— **干脆跳过 SSH 测试最省事**。
+
+如果哪天 push 报 `Connection was reset`、`Empty reply from server` 或超时，
+那多半是**间歇性**的。**重试即可**，不要急着换协议。
+
+**核实远端状态请用 API，不要用网页**（网页访问经常超时，API 一直稳定）：
 
 ```powershell
 curl.exe -s https://api.github.com/repos/MarsomUp/start-rag/git/trees/main?recursive=1
@@ -264,5 +292,9 @@ examples/            学习用示例（如 bm25_demo.py）
   文档里（含具体命令和数字），新增结论请沿用这个习惯。
 - 用户会**自己改代码**（例如改过 `services/rag.py` 里的 prompt 措辞）。
   改动前先读文件当前内容，不要假设它还是你上次写的样子。
-- 不确定的事**先验证再断言**。本项目已有多处"一开始猜错、实测推翻"的记录
-  （例如"缺 bge 查询指令"的猜测是错的；"BM25 能治曹操别名问题"的结论也是错的）。
+- 不确定的事**先验证再断言**。本项目已有多处"一开始猜错、实测推翻"的记录：
+  "缺 bge 查询指令"的猜测是错的；"BM25 能治曹操别名问题"的结论是错的；
+  最典型的是把用户的**代理软件**误判成"坏掉的系统代理"（当时它只是没启动），
+  于是用 `NO_PROXY=*` 绕开，还把这个错误结论写进了文档 —— 直到用户说明
+  "我装了代理 VPN 才能访问 GitHub"才纠正过来。
+  **看到配置先问一句"它为什么是这样"，别急着当成故障绕开。**
