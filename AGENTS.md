@@ -160,6 +160,43 @@ uvicorn 的 `StatReload` 实现是 `reload_dir.rglob("*.py")`。
 因为 `rag_cache` 有断点续算，重排不会白跑 —— 实测从 192/600 继续。
 **别删这个调用。**
 
+### 4.9 Git 远端必须用 HTTPS，不要改成 SSH
+
+远端：`https://github.com/MarsomUp/start-rag.git`（默认分支 `main`）
+
+本机对 GitHub 的干扰方式很特别。实测结论（2026-10，网络环境可能变化）：
+
+| 入口 | 结果 |
+|---|---|
+| **HTTPS push** | ✅ 可用（GCM 凭据已存，不需要再登录） |
+| SSH `git@github.com:22` | ❌ 认证成功，但 push 必失败 |
+| SSH `ssh.github.com:443` | ❌ 同上 |
+
+SSH 的失败现象**极具迷惑性**，别误判成自己配置错了：
+
+```
+Transferred: sent 3620, received 3932 bytes, in 0.8 seconds
+debug1: Exit status 0                                    ← ssh 自己退出码是 0
+send-pack: unexpected disconnect while reading sideband packet
+fatal: the remote end hung up unexpectedly
+```
+
+拆开看就是：TCP 通 → SSH 握手通 → 认证通（会打印 `Hi MarsomUp`）→
+**`git ls-remote`（读）通** → 但 **`git-receive-pack`（写）刚发出 3.6KB 就被远端关闭**。
+换 `IPQoS=0`、`protocol.version=1`、端口 22/443 四种组合**全部无效**；
+把提交拆到只剩 192KB 也照样失败 —— 所以**不是体积问题，是写通道被干扰**。
+
+> 如果哪天 push 报 `Connection was reset`、`Empty reply from server` 或超时，
+> 那是**间歇性**的（同一分钟内 `https://github.com` 可能又通了）。
+> **重试即可**，不要急着换协议 —— 换 SSH 只会更糟。
+
+另外本机 `https://github.com` 的**网页访问**经常超时，但 `api.github.com` 一直稳定。
+所以想核实远端状态时，**用 API 比用网页可靠**：
+
+```powershell
+curl.exe -s https://api.github.com/repos/MarsomUp/start-rag/git/trees/main?recursive=1
+```
+
 ---
 
 ## 5. 目录导航
