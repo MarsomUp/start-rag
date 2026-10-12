@@ -337,7 +337,7 @@ def build_or_load(
     paths: str | Path | Sequence[str | Path],
     *,
     embeddings=None,
-    model_name: str = DEFAULT_MODEL,
+    model_name: str | None = None,
     normalize: bool = True,
     chunk_size: int = 600,
     chunk_overlap: int = 80,
@@ -350,6 +350,18 @@ def build_or_load(
 ) -> tuple[FAISS, dict]:
     """构建或加载向量库。命中缓存时**不切分、不跑模型**。
 
+    关于 `model_name` / `normalize`
+    -------------------------------
+    这两个参数会**参与缓存键的计算**，所以它们必须准确反映
+    "这些向量到底是用什么模型、什么方式算出来的"，否则键和向量会对不上。
+
+    - `model_name=None`（推荐）：自动从传入的 `embeddings` 对象推断。
+      传 `embeddings` 时不写 `model_name` 就行，不可能写错。
+    - 显式传 `model_name`：必须和 `embeddings` 实际的模型一致，否则直接报错。
+    - `normalize` 必须和 `embeddings` 的 `normalize_embeddings` 一致 ——
+      它同时决定缓存键**和** FAISS 的距离度量
+      （True→内积，False→欧氏距离）。不一致会用错度量方式。
+
     Returns
     -------
     (vectorstore, info)  info 里记录了每个文件是 reused 还是 embedded。
@@ -360,6 +372,23 @@ def build_or_load(
     for p in paths:
         if not p.exists():
             raise FileNotFoundError(f"找不到文件：{p}")
+
+    # ---- 0. 先确定"到底用的是哪个向量模型" ----
+    # ⚠️ 这里曾经有个隐蔽的 bug：签名默认 DEFAULT_MODEL（bge-large），
+    # 而调用方传进来的 embeddings 实际是 bge-small（来自 settings.model_name）。
+    # 于是缓存键记着 large、向量却是 small —— 平时一致所以看不出来，
+    # 但一旦在 config 里换了模型，键**不会变**，就会命中旧向量，
+    # 轻则维度不匹配报错，重则静默用错检索结果。
+    actual_model = getattr(embeddings, "model_name", None) if embeddings is not None else None
+    if model_name is None:
+        model_name = actual_model or DEFAULT_MODEL
+    elif actual_model and actual_model != model_name:
+        raise ValueError(
+            f"model_name={model_name!r} 与 embeddings 实际使用的模型 "
+            f"{actual_model!r} 不一致。\n"
+            f"这会让缓存键和向量内容对不上（换了模型仍命中旧缓存）。\n"
+            f"修法：不要传 model_name，让它从 embeddings 自动推断。"
+        )
 
     # ---- 1. 只用"文件哈希 + 参数"算指纹，这一步不需要切分 ----
     book_keys, file_shas = [], []

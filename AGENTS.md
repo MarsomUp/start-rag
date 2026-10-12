@@ -62,7 +62,12 @@ $env:RAG_ADMIN_PASSWORD='你的密码'; Remove-Item data\app.db*
 1. `python -m compileall -q app main.py` —— 语法
 2. 启动后 `GET /api/health` 返回 200
 3. `python main.py`（需要 dummy key，否则会卡在 getpass 等你输入）
-   **必须看到 `[hit] 索引缓存命中`** —— 说明向量缓存没被搞坏
+   **必须看到 `缓存：hit`**，且总耗时约 15~20 秒（几乎只有加载模型的时间）。
+   若显示 `缓存：rebuilt`、或跑了好几分钟 —— 说明缓存没命中，正在重新向量化。
+
+   > 这行来自 `main.py` 自己打印的 `info['status']`。
+   > 别去找 `[hit] 索引缓存命中` —— 那个详细报告属于 `rag_cache` 的 verbose 输出，
+   > 在 Web 热路径上已被 `verbose=False` 关掉了（否则每次提问都刷屏）。
 4. 上传一本几百字的小书 → `GET /api/admin/books` 里状态变成 `ready`
 5. `POST /api/chat {"question": "..."}` → 200 且 `sources` 非空
 
@@ -116,6 +121,21 @@ $env:RAG_ADMIN_PASSWORD='你的密码'; Remove-Item data\app.db*
     2. **先备份**：`Copy-Item data data.bak -Recurse`
     3. **用独立的临时数据目录**：`$env:RAG_CACHE_DIR`、改 `settings.db_path`
     4. 实在要删，**先确认 `books` 表是空的**（没东西可丢再删）
+12. **参与缓存键计算的参数，必须来自真实生效的配置或对象。**
+    绝不能来自一个"和被使用对象无关的默认值"—— 否则缓存会变成**错误的复用**。
+
+    > 反例（已修）：`rag_cache.build_or_load()` 的 `model_name` 默认值是常量
+    > `DEFAULT_MODEL`（`bge-large`），而调用方传进来的 `embeddings` 实际来自
+    > `settings.model_name`（`bge-small`）。**两者毫无关联**，于是缓存键记着
+    > `large`、向量却是 `small`。平时前后一致所以完全看不出来，
+    > 但一旦在 `config.py` 里换模型，**键不会变** → 命中旧向量 →
+    > 512 维索引配 1024 维查询 → 报错或静默用错结果。
+    >
+    > 现在 `model_name=None` 会从 `embeddings.model_name` **自动推断**；
+    > 显式传了不一致的值会**直接报错**，不将就。
+
+    同样地，`normalize` 必须和 `embeddings` 的 `normalize_embeddings` 一致 ——
+    它同时决定缓存键**和** FAISS 的距离度量。详见 ARCHITECTURE.md 第 4 节。
 
 ---
 

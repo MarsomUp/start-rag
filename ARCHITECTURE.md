@@ -71,6 +71,42 @@
 - 同一本书换名字/换目录上传 → 秒级复用
 - 每本书一旦自己的 job 完成就**立刻可查**，不需要等全局重建
 
+### 缓存键包含哪些东西
+
+```
+book_key  = sha256(sha256(文件内容) + chunk_size + chunk_overlap
+                   + separators + model_name + normalize)[:16]
+index_key = sha256(book_keys + model_name + normalize)[:16]
+```
+
+**注意 `model_name`：它必须来自"真正用来算向量的那个模型"。**
+
+这里踩过一个很隐蔽的坑：`build_or_load()` 的签名默认 `model_name=DEFAULT_MODEL`
+（常量 `BAAI/bge-large-zh-v1.5`），而调用方传进来的 `embeddings` 其实是
+`settings.model_name`（`bge-small`）。**两者毫无关联**，于是：
+
+- 缓存键记着 `large`，向量却是 `small` —— 平时前后一致，看不出来
+- 一旦在 `config.py` 里换了模型，**键不会变** → 命中旧向量
+  → 512 维的索引配上 1024 维的查询 → 报错（或静默用错结果）
+
+现在的做法（`app/rag_cache.py`）：
+
+```python
+model_name: str | None = None      # 不传就从 embeddings 推断
+...
+actual = getattr(embeddings, "model_name", None)
+if model_name is None:
+    model_name = actual or DEFAULT_MODEL
+elif actual and actual != model_name:
+    raise ValueError(...)          # 显式传了不一致的值 -> 直接报错，不将就
+```
+
+**通用原则：凡是参与缓存键计算的参数，都必须来自真实生效的配置或对象，
+绝不能来自一个与被使用对象无关的默认值。** 否则"缓存"就会变成"错误的复用"。
+
+同理 `normalize` 也必须和 `embeddings` 的 `normalize_embeddings` 一致 ——
+它同时决定缓存键**和** FAISS 的距离度量（True→内积，False→欧氏距离）。
+
 ---
 
 ## 5. 目录结构
