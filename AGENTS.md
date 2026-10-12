@@ -207,7 +207,8 @@ uvicorn 的 `StatReload` 实现是 `reload_dir.rglob("*.py")`。
 
 | 入口 | 结果 |
 |---|---|
-| **HTTPS push** | ✅ 稳定可用（已成功推送 3 次） |
+| **HTTPS push（走代理）** | ✅ 可靠 —— 前提是 4.3 那个代理在跑 |
+| HTTPS push（直连） | ⚠️ **不稳定**：出现过连续 5 次 `Could not connect to server` |
 | SSH `git@github.com:22` | ❌ push 发出 3.6KB 后连接被关 |
 | SSH `ssh.github.com:443` | ❌ 同上 |
 
@@ -236,8 +237,45 @@ fatal: the remote end hung up unexpectedly
 于是它一直等 stdin，表现为"卡住"。理论上加 `-n`（stdin 接 /dev/null）能避免，
 但实测加了 `-n` 也出现过挂起 —— **干脆跳过 SSH 测试最省事**。
 
-如果哪天 push 报 `Connection was reset`、`Empty reply from server` 或超时，
-那多半是**间歇性**的。**重试即可**，不要急着换协议。
+**push 失败时，第一件事是看代理开没开。**
+直连 `github.com` 是**不可靠**的 —— 实测出现过**连续 5 次**
+`Failed to connect to github.com:443 ... Could not connect to server`
+（连 TCP 都建不起来）。本机能访问 GitHub 靠的正是 4.3 那个 mihomo 代理，
+所以 **git 也必须走它**。
+
+已经配好了，**只对 github.com 生效，不影响别的远端**：
+
+```powershell
+git config --global --get-regexp proxy
+# http.https://github.com.proxy  http://127.0.0.1:10090
+```
+
+临时切换（调试用）：
+
+```powershell
+git -c http.proxy= push origin main                            # 强制直连
+git -c http.proxy=http://127.0.0.1:10090 push origin main      # 强制走代理
+```
+
+**报错对照表**（照着看就知道是什么毛病）：
+
+| 报错 | 含义 |
+|---|---|
+| `Failed to connect to github.com:443 after 21000 ms` | 直连不通，且没走代理 |
+| `Empty reply from server` | 连上了但被中途掐断（代理抖动） |
+| `Connection was reset` | 同上 |
+| `Could not resolve host` | 代理没在跑 / DNS 问题 |
+
+检查代理是否在运行：
+
+```powershell
+Get-Process mihomo-windows-386 -EA SilentlyContinue
+Get-NetTCPConnection -LocalPort 10090 -State Listen -EA SilentlyContinue
+```
+
+> 注意：**代理没开时，走代理的配置会让报错变成
+> `Failed to connect to 127.0.0.1:10090`** —— 这其实更清楚，
+> 一眼就知道是"代理没开"而不是"GitHub 挂了"。
 
 **核实远端状态请用 API，不要用网页**（网页访问经常超时，API 一直稳定）：
 
