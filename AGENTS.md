@@ -99,6 +99,23 @@ $env:RAG_ADMIN_PASSWORD='你的密码'; Remove-Item data\app.db*
    漏写路由级依赖则一眼能看出来。见 `app/security.py` 和 ARCHITECTURE.md 10.7。
 10. **不要把 `role` 放进会话 cookie。** 只放 `{"uid": 1}`，每次请求现查数据库 ——
     否则改了用户角色要等对方重新登录才生效。
+11. **★ 绝对不要删除 `data/` 里的任何东西。**
+    `data/app.db*`、`data/books/*`、`data/.session_secret` 全都是**用户的真实数据**，
+    不是"测试数据"。`.rag_cache/` 同样珍贵（几十分钟的 CPU 时间），也不要动。
+
+    > 这条规则是**踩过坑**才加的：为了让测试"干净"，反复执行
+    > `Remove-Item data\app.db*` 和 `Remove-Item data\books\*`，
+    > 把用户上传并**已经向量化好**的《三国演义》记录删掉了 ——
+    > 用户下次登录发现书架空了。
+    >
+    > 好消息是 `.rag_cache/` 按**内容哈希**存放，源文件还在的话重传即可秒级复用；
+    > 但这是运气，不是设计。**不要把用户的运气当成自己的保障。**
+
+    **需要干净环境时的正确做法**（按优先级）：
+    1. **直接问用户**能不能清库
+    2. **先备份**：`Copy-Item data data.bak -Recurse`
+    3. **用独立的临时数据目录**：`$env:RAG_CACHE_DIR`、改 `settings.db_path`
+    4. 实在要删，**先确认 `books` 表是空的**（没东西可丢再删）
 
 ---
 
