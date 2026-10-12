@@ -42,6 +42,21 @@ $env:DEEPSEEK_API_KEY='sk-...'
 python main.py
 ```
 
+**登录（阶段 5 之后所有页面都要登录）：**
+
+```powershell
+# 首次启动会自动建一个管理员，密码是随机生成的，
+# 只在启动日志里打印【一次】—— 没记下来就得用下面的命令改
+python tools\adduser.py                                  # 列出所有账号
+python tools\adduser.py admin --reset 新密码              # 改密码
+python tools\adduser.py zhangsan pass1234                # 建普通用户
+python tools\adduser.py lisi pass1234 --role admin        # 建管理员
+python tools\adduser.py lisi --delete                    # 删用户
+
+# 想自己指定初始密码：设环境变量后删库重启
+$env:RAG_ADMIN_PASSWORD='你的密码'; Remove-Item data\app.db*
+```
+
 **改完代码后必须跑的自检**（缺一不可，这是本项目的回归基线）：
 
 1. `python -m compileall -q app main.py` —— 语法
@@ -79,6 +94,11 @@ python main.py
    再加自动刷新的片段前，先想清楚会不会又多一条常驻轮询。
 8. **缓存写入失败不能影响主流程。** `rag_cache` 的进度回调已经 try/except 包住了，
    别把这个保护去掉。
+9. **权限守卫写在 `APIRouter(dependencies=[Depends(require_admin)])` 上，
+   不要写在每个函数的参数里。** 漏写一个函数参数是常见疏漏，
+   漏写路由级依赖则一眼能看出来。见 `app/security.py` 和 ARCHITECTURE.md 10.7。
+10. **不要把 `role` 放进会话 cookie。** 只放 `{"uid": 1}`，每次请求现查数据库 ——
+    否则改了用户角色要等对方重新登录才生效。
 
 ---
 
@@ -225,6 +245,25 @@ fatal: the remote end hung up unexpectedly
 curl.exe -s https://api.github.com/repos/MarsomUp/start-rag/git/trees/main?recursive=1
 ```
 
+### 4.10 认证相关的三个坑
+
+**① 管理员初始密码只在启动日志里打印【一次】。**
+它是随机生成的（`secrets.token_urlsafe(12)`），没记下来就进不去系统了。
+补救：`python tools/adduser.py admin --reset 新密码` —— 服务开着也能执行。
+想一开始就自己指定：设 `RAG_ADMIN_PASSWORD` 后删掉 `data/app.db` 重启。
+
+**② 别删 `data/.session_secret`。**
+它是会话 cookie 的签名密钥，**必须跨重启稳定**，否则每次重启所有人都被登出。
+没配 `RAG_SESSION_SECRET` 时会自动生成并落盘 —— 所以它不是垃圾文件。
+（注意它和 App 自己的数据都在 `data/` 下，而 `data/` 在 `.gitignore` 里，
+不会误提交，但清理时要留意。）
+
+**③ 判断"要 HTML 还是 JSON"要看路径，不要看 `Accept` 头。**
+最初写的是 `"text/html" in Accept` —— 看着合理（浏览器导航确实带），
+但 TestClient / curl / 不少脚本和代理发的是 `Accept: */*`，
+于是同一个未登录请求：浏览器 303 跳登录页、脚本 401 JSON。
+行为随客户端而变，极难排查。现在按 `/api/*` 前缀判断，见 ARCHITECTURE.md 10.7。
+
 ---
 
 ## 5. 目录导航
@@ -237,27 +276,34 @@ app/
   db.py              引擎 + WAL + busy_timeout（API 和 Worker 会同时写 jobs 表）
   models.py          Book / Job / User / ChatLog + 状态机常量
   templating.py      共享 Jinja2 对象（独立模块，避免循环导入）
+  security.py        ★ 认证：bcrypt 密码 + 签名 cookie 会话 + require_user/require_admin
   rag_cache.py       ★ 核心资产：两级向量缓存 + 断点续算 + on_progress 回调
   worker.py          后台 Worker：串行消费 jobs 表
   routers/
+    auth_ui.py       登录 / 登出（普通表单 POST，刻意不用 htmx）
     books.py         JSON API：上传/列表/删除/进度/队列
     chat.py          JSON API：问答 + 可检索书籍
-    admin_ui.py      HTMX：管理端页面 + 片段
+    users.py         JSON API：用户增删改（仅管理员）
+    admin_ui.py      HTMX：书籍管理页面 + 片段
     chat_ui.py       HTMX：问答页 + 片段
+    users_ui.py      HTMX：用户管理页面 + 片段
   services/
     ingestion.py     上传登记 + 向量化（API 与界面共用）
     chat.py          问答：选书→检索→生成→记账（API 与界面共用）
+    users.py         用户增删改 + 边界保护（API 与界面共用）
     rag.py           RAG 引擎（prompt 模板也在这里）
     embeddings.py    向量模型单例
-  web/templates/     4 个页面：base / index / admin / chat
-                     6 个 HTMX 片段（下划线开头）：_book_list / _book_list_response
+  web/templates/     7 个页面：base / index / login / forbidden / admin / chat / users
+                     7 个 HTMX 片段（下划线开头）：_book_list / _book_list_response
                      / _queue_badge / _upload_error / _exchange / _chat_error
+                     / _user_list + _user_error
   web/static/        htmx.min.js（本地内置）
-data/                app.db + books/<sha12>_原名.txt   ← gitignore
+data/                app.db + books/<sha12>_原名.txt + .session_secret   ← gitignore
 .rag_cache/         向量缓存（books/ 单书向量 + indexes/ 组合索引）   ← gitignore
 main.py              CLI 版入口（回归测试用，不要删）
 start.bat/start.sh   启动脚本：先杀 uvicorn 父子进程再启动
-tools/dbview.py      查看 data/app.db 的只读工具（总览/schema/show/sql/files）
+tools/dbview.py      查看 data/app.db 的只读工具（总览/schema/show/sql/files/checkpoint）
+tools/adduser.py     命令行建用户 / 改密码 / 删用户（忘了管理员密码时用）
 examples/            学习用示例（如 bm25_demo.py）
 ```
 
@@ -276,7 +322,7 @@ examples/            学习用示例（如 bm25_demo.py）
 | 2 | 后台 Worker + 任务队列 + 进度写库 | ✅ |
 | 3 | 管理端界面（上传/列表/进度条/删除） | ✅ |
 | 4 | 用户问答界面 + `/api/chat`（含引用来源） | ✅ |
-| 5 | 登录 + 角色隔离（`users` 表已建好） | ⬜ |
+| 5 | 登录 + 角色隔离（admin / user） | ✅ |
 | 6 | 打磨：取消任务、失败重试、SSE、Docker | ⬜ |
 
 **另一个待办（实测收益最大）：查询改写（multi-query）。**

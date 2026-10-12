@@ -22,11 +22,18 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.db import get_db
 from app.models import JOB_QUEUED, JOB_RUNNING, Book, Job
+from app.security import page_context, require_admin
 from app.services import ingestion
 from app.templating import templates
 from app.worker import get_task_queue
 
-router = APIRouter(tags=["admin-ui"], include_in_schema=False)
+# 整个管理端界面都要管理员。守卫写在 router 上，
+# 以后新增片段路由不会漏掉 —— 未登录会被这里拦住并跳转到 /login。
+router = APIRouter(
+    tags=["admin-ui"],
+    include_in_schema=False,
+    dependencies=[Depends(require_admin)],
+)
 
 
 # ----------------------------------------------------------------------
@@ -74,7 +81,7 @@ def _list_context(db: Session) -> dict:
 # ----------------------------------------------------------------------
 @router.get("/admin", response_class=HTMLResponse)
 def page_admin(request: Request, db: Session = Depends(get_db)):
-    context = {"settings": settings}
+    context = page_context(request, db, settings=settings)
     context.update(_list_context(db))
     return templates.TemplateResponse(request, "admin.html", context)
 

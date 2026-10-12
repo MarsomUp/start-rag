@@ -23,3 +23,7 @@ numpy>=2.4.6
 
 # 其他
 httpx>=0.28.1
+
+# 认证（阶段 5）
+bcrypt==5.0.0            # 密码哈希。故意慢，抗暴力枚举；自带随机盐
+itsdangerous==2.2.0      # 会话 cookie 的签名（starlette SessionMiddleware 依赖它）

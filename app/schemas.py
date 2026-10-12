@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -78,3 +79,28 @@ class ChatResponse(BaseModel):
     sources: list[SourceOut]
     elapsed: float
     cache_status: str
+
+
+# ----------------------------------------------------------------------
+# 用户（阶段 5）
+# ----------------------------------------------------------------------
+class UserOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    username: str
+    role: str
+    created_at: datetime
+    # 注意：**绝不出现在响应里**的字段是 password_hash —— 这就是要把 ORM 模型
+    # 和 API 模型分开的原因，少写一个字段就漏出去了。
+
+
+class UserCreate(BaseModel):
+    username: str = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_.\-]+$")
+    """只允许 ASCII 字母数字和 _ . -，避免前后空格/全角字符这类看不见的坑。"""
+    password: str = Field(min_length=6, max_length=64)
+    role: Literal["admin", "user"] = "user"
+
+
+class PasswordReset(BaseModel):
+    password: str = Field(min_length=6, max_length=64)

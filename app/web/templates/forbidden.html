@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}没有权限 · 知识库问答{% endblock %}
+
+{% block content %}
+<div class="card">
+  <h1>没有权限</h1>
+  <div class="alert err-text">
+    这个页面需要<strong>管理员</strong>权限。你当前的角色是
+    {% if current_user %}
+      「{{ '管理员' if current_user.role == 'admin' else '普通用户' }}」。
+    {% else %}
+      「未登录」。
+    {% endif %}
+  </div>
+  <p class="muted small">
+    需要更高权限请找管理员。普通用户可以正常使用
+    <a href="/chat">问答</a>。
+  </p>
+  <p><a href="/">← 返回首页</a></p>
+</div>
+{% endblock %}

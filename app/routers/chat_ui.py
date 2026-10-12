@@ -15,10 +15,16 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.db import get_db
+from app.models import User
+from app.security import page_context, require_user
 from app.services import chat as chat_service
 from app.templating import templates
 
-router = APIRouter(tags=["chat-ui"], include_in_schema=False)
+router = APIRouter(
+    tags=["chat-ui"],
+    include_in_schema=False,
+    dependencies=[Depends(require_user)],
+)
 
 
 @router.get("/chat", response_class=HTMLResponse)
@@ -27,12 +33,13 @@ def page_chat(request: Request, db: Session = Depends(get_db)):
     return templates.TemplateResponse(
         request,
         "chat.html",
-        {
-            "settings": settings,
-            "books": books,
+        page_context(
+            request, db,
+            settings=settings,
+            books=books,
             # 服务端先检查一次，让用户在提问之前就知道 Key 没配
-            "api_key_ok": bool(settings.deepseek_api_key),
-        },
+            api_key_ok=bool(settings.deepseek_api_key),
+        ),
     )
 
 
@@ -41,6 +48,7 @@ def partial_ask(
     request: Request,
     question: str = Form(...),
     book_ids: list[int] = Form(default=[]),
+    user: User = Depends(require_user),
     db: Session = Depends(get_db),
 ):
     """返回一张"一问一答"卡片，由 htmx 追加到会话区。
@@ -49,7 +57,9 @@ def partial_ask(
     和正常回答长得一样，用户不用去看浏览器控制台。
     """
     try:
-        result = chat_service.ask_question(db, question, book_ids or None)
+        result = chat_service.ask_question(
+            db, question, book_ids or None, user_id=user.id
+        )
     except chat_service.ChatError as exc:
         return templates.TemplateResponse(
             request, "_chat_error.html", {"question": question, "message": exc.message}

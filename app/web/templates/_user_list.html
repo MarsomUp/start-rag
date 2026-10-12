@@ -1,0 +1,39 @@
+{#-
+  用户列表片段。根节点就是 <tbody>，配合 hx-swap="outerHTML" 正好整体替换。
+
+  这里**没有 hx-trigger 轮询** —— 用户不会自己冒出来，增删之后片段自己刷新就够了。
+  多一条常驻轮询没有任何收益（AGENTS.md 第 3 节第 7 条）。
+-#}
+<tbody id="user-list">
+  {% for u in users %}
+    <tr>
+      <td class="muted small">{{ u.id }}</td>
+      <td>
+        {{ u.username }}
+        {% if current_user and u.id == current_user.id %}
+          <span class="muted small">（就是你）</span>
+        {% endif %}
+      </td>
+      <td>
+        <span class="tag {{ 'ok' if u.role == 'admin' else 'busy' }}">
+          {{ '管理员' if u.role == 'admin' else '普通用户' }}
+        </span>
+      </td>
+      <td class="muted small">{{ u.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+      <td>
+        {#- 自己那一行不给删：服务层也会拦，但界面别让人点了才报错 -#}
+        {% if current_user and u.id != current_user.id %}
+          <button type="button" class="link-btn danger"
+                  hx-delete="/users/partials/{{ u.id }}"
+                  hx-target="#user-list"
+                  hx-swap="outerHTML"
+                  hx-confirm="确定删除用户「{{ u.username }}」？此操作不可撤销。">删除</button>
+        {% else %}
+          <span class="muted small">—</span>
+        {% endif %}
+      </td>
+    </tr>
+  {% else %}
+    <tr><td colspan="5" class="muted">还没有任何账号</td></tr>
+  {% endfor %}
+</tbody>

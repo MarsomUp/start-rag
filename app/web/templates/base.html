@@ -107,17 +107,63 @@
     details.scope summary { cursor:pointer; color:var(--brand); font-size:14px; }
     .scope-list { display:flex; flex-wrap:wrap; gap:14px; margin:10px 0 4px; font-size:14px; }
     .scope-list label { display:flex; align-items:center; gap:5px; cursor:pointer; }
+
+    /* ---------- 登录 / 当前用户 ---------- */
+    header .who { margin-left:auto; display:flex; align-items:center; gap:12px;
+                  font-size:13px; color:var(--muted); }
+    .user-chip { display:flex; align-items:center; gap:7px; }
+    /* 退出用按钮而不是链接：改成链接就会被浏览器预取，导致莫名其妙掉线 */
+    .link-btn { background:none; border:0; padding:0; cursor:pointer;
+                color:var(--brand); font-size:13px; font-family:inherit; }
+    .link-btn:hover { text-decoration:underline; }
+    .auth-card { max-width:380px; margin:0 auto; }
+    .auth-form { display:flex; flex-direction:column; margin-top:16px; }
+    .auth-form label { font-size:13px; color:var(--muted); margin-top:10px; }
+    .auth-form input { padding:9px 12px; font-size:14px; border:1px solid var(--line);
+                       border-radius:6px; font-family:inherit; margin-top:4px; }
+    .auth-form input:focus { outline:2px solid #bfdbfe; border-color:var(--brand); }
+    .auth-form button { margin-top:18px; padding:10px; font-size:14px; }
+
+    /* ---------- 用户管理 ---------- */
+    .section-title { font-size:15px; margin:22px 0 2px; }
+    .user-form { display:flex; flex-wrap:wrap; gap:12px; align-items:flex-end;
+                 margin:10px 0 6px; }
+    .user-form label { display:flex; flex-direction:column; gap:4px;
+                       font-size:13px; color:var(--muted); }
+    .user-form input, .user-form select { padding:8px 10px; font-size:14px;
+                 border:1px solid var(--line); border-radius:6px; font-family:inherit; }
+    .user-form input:focus, .user-form select:focus {
+                 outline:2px solid #bfdbfe; border-color:var(--brand); }
+    .link-btn.danger { color:var(--err); }
   </style>
 </head>
 <body>
   <header>
     <span class="brand">知识库问答</span>
-    <nav>
-      <a href="/" class="{% if active == 'home' %}active{% endif %}">首页</a>
-      <a href="/chat" class="{% if active == 'chat' %}active{% endif %}">问答</a>
-      <a href="/admin" class="{% if active == 'admin' %}active{% endif %}">管理端</a>
-      <a href="/docs" target="_blank">API 文档</a>
-    </nav>
+    {% if current_user %}
+      <nav>
+        <a href="/" class="{% if active == 'home' %}active{% endif %}">首页</a>
+        <a href="/chat" class="{% if active == 'chat' %}active{% endif %}">问答</a>
+        {% if current_user.role == 'admin' %}
+          <a href="/admin" class="{% if active == 'admin' %}active{% endif %}">书籍管理</a>
+          <a href="/users" class="{% if active == 'users' %}active{% endif %}">用户管理</a>
+        {% endif %}
+        <a href="/docs" target="_blank">API 文档</a>
+      </nav>
+      <div class="who">
+        <span class="user-chip">
+          {{ current_user.username }}
+          <span class="tag {{ 'ok' if current_user.role == 'admin' else 'busy' }}">
+            {{ '管理员' if current_user.role == 'admin' else '普通用户' }}
+          </span>
+        </span>
+        <form method="post" action="/logout">
+          <button type="submit" class="link-btn">退出</button>
+        </form>
+      </div>
+    {% else %}
+      <nav><a href="/login">登录</a></nav>
+    {% endif %}
   </header>
   <main>
     {% block content %}{% endblock %}

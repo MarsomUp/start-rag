@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}登录 · 知识库问答{% endblock %}
+
+{% block content %}
+<div class="card auth-card">
+  <h1>登录</h1>
+
+  {% if error %}
+    <div class="alert err-text">{{ error }}</div>
+  {% endif %}
+
+  <form method="post" action="/login" class="auth-form">
+    {#- 登录后跳回原来想去的页面；后端会校验它只能是站内相对路径 -#}
+    <input type="hidden" name="next" value="{{ next }}">
+
+    <label for="username">用户名</label>
+    <input id="username" type="text" name="username" required autofocus
+           autocomplete="username" value="{{ username or '' }}">
+
+    <label for="password">密码</label>
+    <input id="password" type="password" name="password" required
+           autocomplete="current-password">
+
+    <button type="submit">登录</button>
+  </form>
+
+  <p class="muted small">
+    这个系统不开放自助注册 —— 需要账号请找管理员在「用户管理」里创建。
+  </p>
+</div>
+{% endblock %}

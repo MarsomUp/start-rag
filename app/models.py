@@ -30,6 +30,10 @@ JOB_DONE = "done"
 JOB_FAILED = "failed"
 JOB_CANCELED = "canceled"
 
+# 角色
+ROLE_ADMIN = "admin"   # 能进管理端：上传/删除书籍、管理用户
+ROLE_USER = "user"     # 只能用问答
+
 
 class Book(Base):
     __tablename__ = "books"

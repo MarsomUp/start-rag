@@ -55,8 +55,12 @@ def ask_question(
     question: str,
     book_ids: list[int] | None = None,
     k: int | None = None,
+    user_id: int | None = None,
 ) -> ChatResult:
     """完整走一遍 RAG 并记账。
+
+    Args:
+        user_id: 提问者。阶段 5 之前一直是 None，现在由路由传入。
 
     Raises:
         ChatError: 问题为空 / 没有可检索的书 / 引擎或模型调用失败
@@ -107,6 +111,7 @@ def ask_question(
     # 记一笔，方便以后做历史记录和统计（阶段 5 会把 user_id 填上）
     db.add(
         ChatLog(
+            user_id=user_id,
             question=question,
             answer=answer.text,
             sources_json=json.dumps(

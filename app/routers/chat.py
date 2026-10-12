@@ -8,16 +8,29 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.db import get_db
+from app.models import User
 from app.schemas import BookOut, ChatRequest, ChatResponse, SourceOut
+from app.security import require_user
 from app.services import chat as chat_service
 
-router = APIRouter(prefix="/api", tags=["chat"])
+router = APIRouter(
+    prefix="/api",
+    tags=["chat"],
+    dependencies=[Depends(require_user)],
+)
 
 
 @router.post("/chat", response_model=ChatResponse, summary="提问")
-def chat(req: ChatRequest, db: Session = Depends(get_db)):
+def chat(
+    req: ChatRequest,
+    # 记一次"谁问的"，这样 chat_logs 能按用户区分（阶段 5 之前这里一直是 NULL）
+    user: User = Depends(require_user),
+    db: Session = Depends(get_db),
+):
     try:
-        result = chat_service.ask_question(db, req.question, req.book_ids, req.k)
+        result = chat_service.ask_question(
+            db, req.question, req.book_ids, req.k, user_id=user.id
+        )
     except chat_service.ChatError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
 

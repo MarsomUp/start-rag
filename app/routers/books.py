@@ -15,10 +15,16 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.models import JOB_QUEUED, JOB_RUNNING, Book, Job
 from app.schemas import BookOut, JobOut, UploadResponse
+from app.security import require_admin
 from app.services import ingestion
 from app.worker import get_task_queue
 
-router = APIRouter(prefix="/api/admin", tags=["admin"])
+# 守卫写在 router 上而不是每个函数上：以后新增管理端接口时**不可能忘记加权限**
+router = APIRouter(
+    prefix="/api/admin",
+    tags=["admin"],
+    dependencies=[Depends(require_admin)],
+)
 
 
 # ----------------------------------------------------------------------

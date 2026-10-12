@@ -150,9 +150,14 @@ job : queued → running → done
 ## 7. API 清单
 
 ```
-GET    /api/health                    健康检查
+GET    /api/health                    健康检查（公开）
 
-# 管理端
+# 登录（页面路由，不是 API）
+GET    /login                         登录页
+POST   /login                         表单登录 → 303 跳 next
+POST   /logout                        登出
+
+# 管理端（全部要求 role=admin）
 POST   /api/admin/books               multipart 上传 → {book_id, job_id, status, queued, dedup}
                                       ★ 立刻返回，向量化在后台跑
 GET    /api/admin/books               书籍列表
@@ -161,9 +166,13 @@ DELETE /api/admin/books/{id}          删除（向量缓存故意保留）
 GET    /api/admin/jobs               任务列表
 GET    /api/admin/jobs/{id}           任务进度 ← 前端轮询这个画进度条
 GET    /api/admin/queue               队列概览 {queued, worker_alive, running}
-                                     （界面不走它，见 10.5 的带外交换）
+                                      （界面不走它，见 10.5 的带外交换）
+GET    /api/admin/users               用户列表（永不返回 password_hash）
+POST   /api/admin/users               新建 {username, password, role}
+POST   /api/admin/users/{id}/password 重置密码
+DELETE /api/admin/users/{id}          删除（不能删自己 / 最后一个管理员）
 
-# 用户端（阶段 4）
+# 用户端（要求登录，admin 或 user 都行）
 POST   /api/chat                      {question, book_ids?, k?} → {answer, sources, elapsed}
 GET    /api/books                     可检索的书籍（只有 status=ready 的）
 ```
@@ -241,7 +250,7 @@ GET    /api/books                     可检索的书籍（只有 status=ready �
 | 2 | ★ 后台 Worker + 任务队列 + 进度写库 | ✅ 已完成 |
 | 3 | 管理端界面：上传 / 列表 / 进度条 / 删除 | ✅ 已完成 |
 | 4 | 用户问答界面 + `/api/chat`（含引用来源） | ✅ 已完成 |
-| 5 | 登录 + 角色隔离（admin 才能传书） | ⬜ 待做 |
+| 5 | 登录 + 角色隔离（admin 才能传书） | ✅ 已完成 |
 | 6 | 打磨：取消任务、失败重试、SSE、Docker | ⬜ 待做 |
 
 **阶段 2（分水岭）已完成**，"单独异步加载"已经真正成立。
@@ -386,7 +395,92 @@ JSON 路由把 `UploadError` 翻译成 `HTTPException`，HTMX 路由翻译成错
 | 空白问题 | HTMX → "问题不能为空" 卡片；JSON → 422（Pydantic 拦截） |
 | `book_ids=[999]` | 400 |
 | `GET /api/books` | 只返回 `status=ready` 的书 |
-| `chat_logs` | 每次提问都落库（含 sources_json、elapsed_ms） |
+| `chat_logs` | 每次提问都落库（含 sources_json、elapsed_ms、**user_id**） |
+
+---
+
+## 10.7 登录与角色隔离（阶段 5，已实现）
+
+### 会话：签名 cookie，不引入 Redis
+
+用 `starlette.middleware.sessions.SessionMiddleware`（底层 itsdangerous）——
+会话内容 base64 编码后用 HMAC 签名塞进 cookie，**服务端什么都不存**。
+
+cookie 里只有 `{"uid": 1}`，**刻意不放 role**。放了的话，改了用户角色要等
+对方重新登录才生效；现在每次请求都用 uid 现查数据库，降级立刻生效。
+
+> 为什么不用 JWT：这是同域的服务端渲染应用，没有跨服务验证签名的需求。
+> 签名 cookie 更简单，而且浏览器自动管理，不用写任何前端存储逻辑。
+> JWT 的优势（无状态、跨域）在这里都用不上，只是徒增复杂度。
+
+签名密钥优先读 `RAG_SESSION_SECRET`，否则自动生成并存到 `data/.session_secret`。
+**必须跨重启稳定**，不然每次重启把所有用户登出。
+
+### 密码：bcrypt，不用 sha256
+
+sha256 快得正是缺点 —— 显卡每秒能试几十亿次，数据库被拖走就等于明文。
+bcrypt 故意慢、自带随机盐，所以**同一个密码哈希两次结果不同**，
+不能用 `==` 比，必须 `checkpw`。
+
+⚠️ bcrypt 只处理前 **72 字节**，超了直接报错。中文一个字 3 字节，
+所以约 24 个汉字就到上限 —— `hash_password` 会提前拦下并给清楚的提示。
+
+### 未登录时的响应：按请求类型分三种
+
+这是最容易做错的地方。**对所有请求统一 302 是不行的**：
+
+| 请求类型 | 响应 | 为什么 |
+|---|---|---|
+| htmx 片段（`HX-Request: true`） | `HX-Redirect` 头 | 直接 302 会被 htmx 当成"响应内容" swap 进目标元素，页面上出现一块莫名其妙的登录表单 |
+| 页面（非 `/api/*`） | 303 跳 `/login?next=...` | 浏览器整页导航 |
+| API（`/api/*`） | 401 JSON | 脚本要能拿到结构化的错误 |
+
+判据用**路径**而不是 `Accept` 头 —— 这一点是实测纠正过来的：
+最初写的是 `"text/html" in Accept`，看起来合理（浏览器导航确实带），
+但 TestClient / curl / 不少脚本和代理发的是 `Accept: */*`，
+于是同一个未登录请求，浏览器拿到 303、脚本拿到 401，行为随客户端而变。
+
+htmx 的 `next` 还要特别处理：片段请求的 `request.url` 是**片段地址**
+（如 `/admin/partials/books`），拿它当 next 的话登录后会看到一个裸片段。
+所以优先用它自己发的 `HX-Current-URL`（当前**页面**地址）。
+
+### 守卫放在 router 上，不放在函数上
+
+```python
+router = APIRouter(prefix="/api/admin", tags=["admin"],
+                   dependencies=[Depends(require_admin)])
+```
+
+这样以后新增接口**不可能忘记加权限** —— 漏写一个函数参数是常见疏漏，
+漏写路由级依赖则一眼能看出来。
+
+### 首次启动引导管理员
+
+`users` 表为空时自动建一个管理员：
+
+- 用户名取 `RAG_ADMIN_USERNAME`（默认 `admin`）
+- 密码取 `RAG_ADMIN_PASSWORD`；**留空则随机生成，并在启动日志里打印一次**
+
+比写死 `admin/admin123` 安全得多 —— 那种默认密码是扫描器的第一目标。
+忘了密码可以用 `python tools/adduser.py admin --reset <新密码>` 改。
+
+### 访问矩阵（实测）
+
+| | 未登录 | 普通用户 | 管理员 |
+|---|---|---|---|
+| `/` `/login` `/api/health` | 200 | 200 | 200 |
+| `/chat` `/api/chat` `/api/books` | 303 / 401 | 200 | 200 |
+| `/admin` `/api/admin/*` | 303 / 401 | **403** | 200 |
+| `/users` `/api/admin/users` | 303 / 401 | **403** | 200 |
+
+`/docs` 目前是公开的（只是接口文档，不含数据），阶段 6 可以一起收紧。
+
+### 两条不可逆操作的保护
+
+1. **不能删自己** —— 管理员手一滑就把自己锁在门外
+2. **不能删/降级最后一个管理员** —— 顺带被第 1 条覆盖（自己必然是管理员）
+
+删除用户和降级角色都在 service 层拦，不靠界面提示。
 
 ---
 

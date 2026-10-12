@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% set active = 'users' %}
+{% block title %}用户管理 · 知识库问答{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="card-head">
+    <h1>用户管理</h1>
+    <span class="muted small">共 {{ users|length }} 个账号</span>
+  </div>
+
+  <p class="muted small">
+    系统不开放自助注册 —— 账号在这里发放。
+    <strong>普通用户</strong>只能问答；<strong>管理员</strong>还能上传/删除书籍、管理用户。
+  </p>
+
+  <h2 class="section-title">新建用户</h2>
+
+  {#- 出错时后端会用 HX-Retarget 把错误塞进这个盒子，不换掉列表 -#}
+  <div id="user-error"></div>
+
+  <form class="user-form"
+        hx-post="/users/partials/create"
+        hx-target="#user-list"
+        hx-swap="outerHTML"
+        hx-on::after-request="if (event.detail.successful) this.reset()">
+    <label>用户名
+      <input type="text" name="username" required maxlength="64"
+             pattern="[A-Za-z0-9_.\-]+"
+             title="只能用字母、数字、下划线、点、连字符"
+             placeholder="例如 zhangsan" autocomplete="off">
+    </label>
+
+    <label>密码
+      {#- 刻意用 type=text 而不是 password：管理员需要把初始密码念给用户，
+          看不见就没法核对。这里不是用户自己设密码的场景。 -#}
+      <input type="text" name="password" required minlength="6" maxlength="64"
+             placeholder="至少 6 位" autocomplete="new-password">
+    </label>
+
+    <label>角色
+      <select name="role">
+        <option value="user">普通用户（只能问答）</option>
+        <option value="admin">管理员（全部权限）</option>
+      </select>
+    </label>
+
+    <button type="submit">创建</button>
+  </form>
+
+  <h2 class="section-title">账号列表</h2>
+  <table>
+    <thead>
+      <tr>
+        <th style="width:52px">ID</th>
+        <th>用户名</th>
+        <th style="width:110px">角色</th>
+        <th style="width:150px">创建时间</th>
+        <th style="width:80px">操作</th>
+      </tr>
+    </thead>
+    {% include "_user_list.html" %}
+  </table>
+</div>
+{% endblock %}

@@ -51,6 +51,19 @@ class Settings(BaseSettings):
     max_upload_mb: int = 50
     allowed_suffixes: tuple[str, ...] = (".txt", ".md")
 
+    # ---------- 认证 ----------
+    # 会话 cookie 的签名密钥。留空则自动生成并存到 data/.session_secret。
+    # ⚠️ 这个文件删掉 = 所有人被登出（签名对不上，旧 cookie 全部失效）。
+    # 多台机器部署时要显式设置，否则各自的密钥不同，负载均衡下会随机掉线。
+    rag_session_secret: str = ""
+    rag_session_cookie: str = "rag_session"
+    rag_session_max_age: int = 60 * 60 * 24 * 7      # 7 天
+
+    # 首次启动（users 表为空）时自动创建的管理员。
+    # 密码留空则随机生成并打印在启动日志里 —— 比写死一个 admin123 安全得多。
+    rag_admin_username: str = "admin"
+    rag_admin_password: str = ""
+
     def ensure_dirs(self) -> None:
         """把运行期需要的目录建出来。"""
         for d in (self.data_dir, self.books_dir, self.db_path.parent):
